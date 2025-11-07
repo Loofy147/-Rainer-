@@ -48,6 +48,10 @@ describe('Project Service API', () => {
             expect(res.status).to.equal(201);
             const stats = await fs.stat(projectPath);
             expect(stats.isDirectory()).to.be.true;
+
+            const packageJsonPath = path.join(projectPath, 'package.json');
+            const packageJsonStats = await fs.stat(packageJsonPath);
+            expect(packageJsonStats.isFile()).to.be.true;
         });
 
         it('should not allow path traversal in the project name', async () => {

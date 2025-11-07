@@ -1,0 +1,17 @@
+{
+  "name": "node-express-api",
+  "version": "1.0.0",
+  "description": "A production-ready Node.js API using the Express framework.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "pino": "^8.21.0"
+  }
+}
