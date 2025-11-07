@@ -52,6 +52,10 @@ describe('Project Service API', () => {
             const packageJsonPath = path.join(projectPath, 'package.json');
             const packageJsonStats = await fs.stat(packageJsonPath);
             expect(packageJsonStats.isFile()).to.be.true;
+
+            const ciYmlPath = path.join(projectPath, '.github/workflows/ci.yml');
+            const ciYmlStats = await fs.stat(ciYmlPath);
+            expect(ciYmlStats.isFile()).to.be.true;
         });
 
         it('should not allow path traversal in the project name', async () => {
