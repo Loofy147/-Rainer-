@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
 const { Pool } = require('pg');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const port = 3000;
@@ -10,6 +11,13 @@ app.use(express.json());
 
 const templatesDir = path.join(__dirname, '../../../templates');
 const projectsDir = path.join(__dirname, '../../../projects');
+
+// Rate limiter for project creation
+const createProjectLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // limit each IP to 10 create requests per windowMs
+  message: { error: 'Too many projects created from this IP, please try again later.' },
+});
 
 // PostgreSQL connection pool
 const pool = new Pool({
@@ -90,7 +98,7 @@ app.get('/projects', async (req, res) => {
   }
 });
 
-app.post('/projects', async (req, res) => {
+app.post('/projects', createProjectLimiter, async (req, res) => {
   const { name, template } = req.body;
 
   if (!name) {
