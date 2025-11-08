@@ -12,14 +12,24 @@ build:
     context: frontend/dashboard
     docker:
       dockerfile: Dockerfile
+  - image: rainar/workspace-service
+    context: backend/services/workspace-service
+    docker:
+      dockerfile: Dockerfile
 manifests:
   rawYaml:
+  - infrastructure/k8s/postgres-pvc.yml
+  - infrastructure/k8s/postgres-statefulset.yml
+  - infrastructure/k8s/postgres-service.yml
   - infrastructure/k8s/deployment.yml
   - infrastructure/k8s/service.yml
   - infrastructure/k8s/hpa.yml
   - infrastructure/k8s/dashboard-deployment.yml
   - infrastructure/k8s/dashboard-service.yml
   - infrastructure/k8s/dashboard-hpa.yml
+  - infrastructure/k8s/workspace-service-deployment.yml
+  - infrastructure/k8s/workspace-service-service.yml
+  - infrastructure/k8s/workspace-service-hpa.yml
   - infrastructure/k8s/ingress.yml
 deploy:
   kubectl: {}

@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: workspace-service
+  labels:
+    app.kubernetes.io/name: workspace-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: workspace-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: workspace-service
+    spec:
+      containers:
+      - name: workspace-service
+        image: rainar/workspace-service
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"
