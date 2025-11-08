@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: project-service
+  labels:
+    app.kubernetes.io/name: project-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: project-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: project-service
+    spec:
+      containers:
+      - name: project-service
+        image: rainar/project-service
+        ports:
+        - containerPort: 3000
+        resources:
+          requests:
+            cpu: "100m"
+            memory: "128Mi"
+          limits:
+            cpu: "500m"
+            memory: "256Mi"

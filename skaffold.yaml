@@ -1,0 +1,17 @@
+apiVersion: skaffold/v4beta1
+kind: Config
+metadata:
+  name: rainar
+build:
+  artifacts:
+  - image: rainar/project-service
+    context: backend/services/project-service
+    docker:
+      dockerfile: Dockerfile
+manifests:
+  rawYaml:
+  - infrastructure/k8s/deployment.yml
+  - infrastructure/k8s/service.yml
+  - infrastructure/k8s/hpa.yml
+deploy:
+  kubectl: {}
