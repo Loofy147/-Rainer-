@@ -107,15 +107,23 @@ app.post('/projects', async (req, res) => {
     return res.status(400).json({ error: 'Invalid template specified' });
   }
 
+  // Sanitize project name
   const sanitizedName = path.basename(name);
   if (sanitizedName !== name) {
       return res.status(400).json({ error: 'Invalid project name. Path traversal characters are not allowed.' });
   }
+
+  // Sanitize template id to prevent path traversal
+  const sanitizedTemplate = path.basename(template);
+  if (sanitizedTemplate !== template) {
+      return res.status(400).json({ error: 'Invalid template name. Path traversal characters are not allowed.' });
+  }
+
   const projectPath = path.join(projectsDir, sanitizedName);
 
   try {
     await fs.mkdir(projectPath, { recursive: true });
-    const templatePath = path.join(templatesDir, template);
+    const templatePath = path.join(templatesDir, sanitizedTemplate);
 
     const copyRecursive = async (src, dest) => {
         const entries = await fs.readdir(src, { withFileTypes: true });
