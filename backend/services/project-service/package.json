@@ -12,7 +12,8 @@
   "type": "commonjs",
   "dependencies": {
     "express": "^5.1.0",
-    "mocha": "^11.7.5"
+    "mocha": "^11.7.5",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "chai": "^6.2.0",

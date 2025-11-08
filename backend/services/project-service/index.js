@@ -1,6 +1,7 @@
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
+const { Pool } = require('pg');
 
 const app = express();
 const port = 3000;
@@ -10,6 +11,31 @@ app.use(express.json());
 const templatesDir = path.join(__dirname, '../../../templates');
 const projectsDir = path.join(__dirname, '../../../projects');
 
+// PostgreSQL connection pool
+const pool = new Pool({
+  user: process.env.POSTGRES_USER,
+  host: 'postgres',
+  database: process.env.POSTGRES_DB,
+  password: process.env.POSTGRES_PASSWORD,
+  port: 5432,
+});
+
+// Create projects table if it doesn't exist
+const createTable = async () => {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS projects (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        template VARCHAR(255) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+  } finally {
+    client.release();
+  }
+};
 
 // In-memory cache for templates
 let templatesCache = null;
@@ -47,6 +73,21 @@ async function getTemplates() {
 app.get('/templates', async (req, res) => {
   const templates = await getTemplates();
   res.json(templates);
+});
+
+app.get('/projects', async (req, res) => {
+  try {
+    const client = await pool.connect();
+    try {
+      const result = await client.query('SELECT * FROM projects ORDER BY created_at DESC');
+      res.json(result.rows);
+    } finally {
+      client.release();
+    }
+  } catch (error) {
+    console.error('Failed to get projects:', error);
+    res.status(500).json({ error: 'Failed to get projects' });
+  }
 });
 
 app.post('/projects', async (req, res) => {
@@ -92,6 +133,14 @@ app.post('/projects', async (req, res) => {
 
     await copyRecursive(templatePath, projectPath);
 
+    // Save project to database
+    const client = await pool.connect();
+    try {
+      await client.query('INSERT INTO projects (name, template) VALUES ($1, $2)', [sanitizedName, template]);
+    } finally {
+      client.release();
+    }
+
     console.log(`Creating project '${name}' from template '${template}'`);
     res.status(201).json({ message: `Project '${name}' created successfully from template '${template}'` });
   } catch (error) {
@@ -103,6 +152,7 @@ app.post('/projects', async (req, res) => {
 const startServer = async () => {
     try {
         await getTemplates(); // Wait for templates to be loaded
+        await createTable(); // Create the projects table
         return app.listen(port, () => {
             console.log(`Project service listening at http://localhost:${port}`);
         });

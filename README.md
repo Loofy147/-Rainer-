@@ -8,7 +8,7 @@ Rainar is built on a foundation of cloud-native principles, leveraging a microse
 
 ### Infrastructure as Code
 
-The Rainar platform itself is defined by a set of Kubernetes manifests located in the `infrastructure/k8s` directory. These manifests describe the desired state of the system, including deployments, services, and autoscalers.
+The Rainar platform itself is defined by a set of Kubernetes manifests located in the `infrastructure/k-s` directory. These manifests describe the desired state of the system, including deployments, services, and autoscalers.
 
 ### System Components
 
@@ -16,6 +16,7 @@ The Rainar platform is composed of the following services:
 
 *   **`project-service`**: A backend service responsible for creating and managing projects.
 *   **`dashboard`**: A Next.js frontend application that provides the user interface for the Rainar platform.
+*   **`postgres`**: A PostgreSQL database for persisting project data.
 
 ### Networking
 
@@ -38,7 +39,31 @@ To run the Rainar platform for development, you will need to have the following 
 *   A local Kubernetes cluster, such as [Minikube](https://minikube.sigs.k8s.io/docs/start/) or [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/)
 *   An Ingress controller, such as the [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/deploy/).
 
-Once you have these tools installed, you can spin up the entire Rainar platform with a single command:
+### Manual Secret Creation
+
+Before you can run the platform, you must manually create a Kubernetes secret to hold the PostgreSQL database credentials. Create a file named `postgres-secret.yml` with the following content:
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-secret
+type: Opaque
+stringData:
+  POSTGRES_DB: rainar
+  POSTGRES_USER: rainar
+  POSTGRES_PASSWORD: <your-secret-password>
+```
+
+Replace `<your-secret-password>` with a strong password of your choice. Then, apply the secret to your cluster:
+
+```bash
+kubectl apply -f postgres-secret.yml
+```
+
+### Running the Platform
+
+Once you have created the secret, you can spin up the entire Rainar platform with a single command:
 
 ```bash
 skaffold dev
