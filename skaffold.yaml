@@ -8,10 +8,18 @@ build:
     context: backend/services/project-service
     docker:
       dockerfile: Dockerfile
+  - image: rainar/dashboard
+    context: frontend/dashboard
+    docker:
+      dockerfile: Dockerfile
 manifests:
   rawYaml:
   - infrastructure/k8s/deployment.yml
   - infrastructure/k8s/service.yml
   - infrastructure/k8s/hpa.yml
+  - infrastructure/k8s/dashboard-deployment.yml
+  - infrastructure/k8s/dashboard-service.yml
+  - infrastructure/k8s/dashboard-hpa.yml
+  - infrastructure/k8s/ingress.yml
 deploy:
   kubectl: {}

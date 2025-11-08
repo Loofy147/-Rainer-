@@ -10,6 +10,20 @@ Rainar is built on a foundation of cloud-native principles, leveraging a microse
 
 The Rainar platform itself is defined by a set of Kubernetes manifests located in the `infrastructure/k8s` directory. These manifests describe the desired state of the system, including deployments, services, and autoscalers.
 
+### System Components
+
+The Rainar platform is composed of the following services:
+
+*   **`project-service`**: A backend service responsible for creating and managing projects.
+*   **`dashboard`**: A Next.js frontend application that provides the user interface for the Rainar platform.
+
+### Networking
+
+All traffic to the Rainar platform is routed through a single Ingress controller. The Ingress is configured to route traffic to the appropriate service based on the URL path:
+
+*   `/api/*`: Routed to the `project-service`.
+*   `/*`: Routed to the `dashboard`.
+
 ### Development and Deployment Automation
 
 We use [Skaffold](https://skaffold.dev/) to automate the development and deployment workflow. The `skaffold.yaml` file in the root of the repository defines the entire process of building, tagging, and deploying the Rainar backend to a Kubernetes cluster.
@@ -22,8 +36,9 @@ To run the Rainar platform for development, you will need to have the following 
 *   [kubectl](https://kubernetes.io/docs/tasks/tools/install-kubectl/)
 *   [Skaffold](https://skaffold.dev/docs/install/)
 *   A local Kubernetes cluster, such as [Minikube](https://minikube.sigs.k8s.io/docs/start/) or [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/)
+*   An Ingress controller, such as the [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/deploy/).
 
-Once you have these tools installed, you can spin up the entire Rainar backend with a single command:
+Once you have these tools installed, you can spin up the entire Rainar platform with a single command:
 
 ```bash
 skaffold dev
