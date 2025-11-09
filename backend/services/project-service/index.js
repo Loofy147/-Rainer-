@@ -1,16 +1,17 @@
 const express = require('express');
 const fs = require('fs').promises;
 const path = require('path');
-const { Pool } = require('pg');
 const rateLimit = require('express-rate-limit');
+const archiver = require('archiver');
 
 const app = express();
-const port = 3000;
+const port = 8080;
 
 app.use(express.json());
 
+const apiRouter = express.Router();
+
 const templatesDir = path.join(__dirname, '../../../templates');
-const projectsDir = path.join(__dirname, '../../../projects');
 
 // Rate limiter for project creation
 const createProjectLimiter = rateLimit({
@@ -18,32 +19,6 @@ const createProjectLimiter = rateLimit({
   max: 10, // limit each IP to 10 create requests per windowMs
   message: { error: 'Too many projects created from this IP, please try again later.' },
 });
-
-// PostgreSQL connection pool
-const pool = new Pool({
-  user: process.env.POSTGRES_USER,
-  host: 'postgres',
-  database: process.env.POSTGRES_DB,
-  password: process.env.POSTGRES_PASSWORD,
-  port: 5432,
-});
-
-// Create projects table if it doesn't exist
-const createTable = async () => {
-  const client = await pool.connect();
-  try {
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        template VARCHAR(255) NOT NULL,
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      )
-    `);
-  } finally {
-    client.release();
-  }
-};
 
 // In-memory cache for templates
 let templatesCache = null;
@@ -78,27 +53,12 @@ async function getTemplates() {
   }
 }
 
-app.get('/templates', async (req, res) => {
+apiRouter.get('/templates', async (req, res) => {
   const templates = await getTemplates();
   res.json(templates);
 });
 
-app.get('/projects', async (req, res) => {
-  try {
-    const client = await pool.connect();
-    try {
-      const result = await client.query('SELECT * FROM projects ORDER BY created_at DESC');
-      res.json(result.rows);
-    } finally {
-      client.release();
-    }
-  } catch (error) {
-    console.error('Failed to get projects:', error);
-    res.status(500).json({ error: 'Failed to get projects' });
-  }
-});
-
-app.post('/projects', createProjectLimiter, async (req, res) => {
+apiRouter.post('/projects', createProjectLimiter, async (req, res) => {
   const { name, template } = req.body;
 
   if (!name) {
@@ -127,48 +87,41 @@ app.post('/projects', createProjectLimiter, async (req, res) => {
       return res.status(400).json({ error: 'Invalid template name. Path traversal characters are not allowed.' });
   }
 
-  const projectPath = path.join(projectsDir, sanitizedName);
+  const templatePath = path.join(templatesDir, sanitizedTemplate);
 
   try {
-    await fs.mkdir(projectPath, { recursive: true });
-    const templatePath = path.join(templatesDir, sanitizedTemplate);
+    const archive = archiver('zip', {
+      zlib: { level: 9 } // Sets the compression level.
+    });
 
-    const copyRecursive = async (src, dest) => {
-        const entries = await fs.readdir(src, { withFileTypes: true });
-        await fs.mkdir(dest, { recursive: true });
-        for (let entry of entries) {
-            const srcPath = path.join(src, entry.name);
-            const destPath = path.join(dest, entry.name);
-            if (entry.isDirectory()) {
-                await copyRecursive(srcPath, destPath);
-            } else {
-                await fs.copyFile(srcPath, destPath);
-            }
-        }
-    };
+    archive.on('warning', function(err) {
+      if (err.code === 'ENOENT') {
+        console.warn(err);
+      } else {
+        throw err;
+      }
+    });
 
-    await copyRecursive(templatePath, projectPath);
+    archive.on('error', function(err) {
+      throw err;
+    });
 
-    // Save project to database
-    const client = await pool.connect();
-    try {
-      await client.query('INSERT INTO projects (name, template) VALUES ($1, $2)', [sanitizedName, template]);
-    } finally {
-      client.release();
-    }
+    res.attachment(`${sanitizedName}.zip`);
+    archive.pipe(res);
+    archive.directory(templatePath, false);
+    await archive.finalize();
 
-    console.log(`Creating project '${name}' from template '${template}'`);
-    res.status(201).json({ message: `Project '${name}' created successfully from template '${template}'` });
   } catch (error) {
     console.error(`Failed to create project '${name}':`, error);
     res.status(500).json({ error: 'Failed to create project' });
   }
 });
 
+app.use('/api', apiRouter);
+
 const startServer = async () => {
     try {
         await getTemplates(); // Wait for templates to be loaded
-        await createTable(); // Create the projects table
         return app.listen(port, () => {
             console.log(`Project service listening at http://localhost:${port}`);
         });

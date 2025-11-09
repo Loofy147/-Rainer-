@@ -1,3 +1,5 @@
 skaffold
 kubectl
 skaffold.log
+frontend_dev.log
+project_service.log

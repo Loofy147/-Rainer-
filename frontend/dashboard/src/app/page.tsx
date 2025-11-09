@@ -8,34 +8,13 @@ interface Template {
   description: string;
 }
 
-interface Project {
-  id: number;
-  name: string;
-  template: string;
-  created_at: string;
-}
-
 export default function Home() {
   const [templates, setTemplates] = useState<Template[]>([]);
-  const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectName, setProjectName] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState<{ [key: string]: { message: string; isError: boolean } | null }>({});
-
-  async function fetchProjects() {
-    try {
-      const res = await fetch('/api/projects');
-      if (!res.ok) {
-        throw new Error('Failed to fetch projects');
-      }
-      const data = await res.json();
-      setProjects(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'An unknown error occurred');
-    }
-  }
 
   useEffect(() => {
     async function fetchData() {
@@ -48,7 +27,6 @@ export default function Home() {
         }
         const templatesData = await templatesRes.json();
         setTemplates(templatesData);
-        await fetchProjects();
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An unknown error occurred');
       } finally {
@@ -66,7 +44,7 @@ export default function Home() {
     }
 
     setIsCreating(true);
-    setCreationStatus({ ...creationStatus, [templateId]: { message: 'Creating project...', isError: false } });
+    setCreationStatus({ ...creationStatus, [templateId]: { message: 'Downloading template...', isError: false } });
 
     try {
       const res = await fetch('/api/projects', {
@@ -79,11 +57,20 @@ export default function Home() {
 
       if (!res.ok) {
         const errorData = await res.json();
-        throw new Error(errorData.error || 'Failed to create project');
+        throw new Error(errorData.error || 'Failed to download template');
       }
 
-      setCreationStatus({ ...creationStatus, [templateId]: { message: 'Project created successfully!', isError: false } });
-      await fetchProjects(); // Refresh the project list
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${projectName}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+
+      setCreationStatus({ ...creationStatus, [templateId]: { message: 'Template downloaded successfully!', isError: false } });
     } catch (err) {
       setCreationStatus({ ...creationStatus, [templateId]: { message: err instanceof Error ? err.message : 'An unknown error occurred', isError: true } });
     } finally {
@@ -96,23 +83,6 @@ export default function Home() {
     <main className="flex min-h-screen flex-col items-center p-24">
       <div className="z-10 w-full max-w-5xl items-center justify-between font-mono text-sm lg:flex">
         <h1 className="text-4xl font-bold">Rainar</h1>
-      </div>
-
-      <div className="mt-12 w-full max-w-5xl">
-        <h2 className="text-2xl font-semibold">Created Projects</h2>
-        {projects.length > 0 ? (
-          <ul className="mt-4 space-y-4">
-            {projects.map((project) => (
-              <li key={project.id} className="rounded-lg border border-gray-300 bg-gray-100 p-4">
-                <h3 className="text-lg font-semibold">{project.name}</h3>
-                <p className="mt-2 text-gray-600">Template: {project.template}</p>
-                <p className="mt-2 text-sm text-gray-500">Created: {new Date(project.created_at).toLocaleString()}</p>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-4">No projects created yet.</p>
-        )}
       </div>
 
       <div className="mt-12 w-full max-w-5xl">
