@@ -144,8 +144,24 @@ describe('Project Service API', () => {
     describe('POST /repositories', () => {
         const projectName = 'test-repo';
 
-        it('should create a new repository and return its URL', async () => {
+        it('should return 401 if not authenticated', async () => {
             const res = await request(app)
+                .post('/api/repositories')
+                .send({
+                    name: projectName,
+                    template: 'node-express-api',
+                    config: {
+                        projectDescription: 'A custom description for the test project'
+                    }
+                });
+
+            expect(res.status).to.equal(401);
+        });
+
+        it('should create a new repository and return its URL if authenticated', async () => {
+            const agent = request.agent(app);
+            await agent.get('/api/auth/test-login');
+            const res = await agent
                 .post('/api/repositories')
                 .send({
                     name: projectName,

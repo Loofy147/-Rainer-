@@ -5,19 +5,45 @@ const rateLimit = require('express-rate-limit');
 const archiver = require('archiver');
 const handlebars = require('handlebars');
 const { Octokit } = require('@octokit/rest');
+const session = require('express-session');
+const cookieParser = require('cookie-parser');
+const { AuthorizationCode } = require('simple-oauth2');
 
 const app = express();
 const port = 8080;
 
 app.use(express.json());
+app.use(cookieParser());
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'supersecretkey',
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: process.env.NODE_ENV === 'production' },
+}));
+
 
 const apiRouter = express.Router();
 
 const templatesDir = path.join(__dirname, '../../../templates');
 
-const octokit = new Octokit({
-    auth: process.env.GITHUB_TOKEN,
+const oauth2 = new AuthorizationCode({
+    client: {
+        id: process.env.GITHUB_CLIENT_ID,
+        secret: process.env.GITHUB_CLIENT_SECRET,
+    },
+    auth: {
+        tokenHost: 'https://github.com',
+        tokenPath: '/login/oauth/access_token',
+        authorizePath: '/login/oauth/authorize',
+    },
 });
+
+const isAuthenticated = (req, res, next) => {
+    if (req.session.accessToken) {
+        return next();
+    }
+    res.status(401).json({ error: 'Unauthorized' });
+};
 
 // Rate limiter for project creation
 const createProjectLimiter = rateLimit({
@@ -146,7 +172,7 @@ apiRouter.post('/projects', createProjectLimiter, async (req, res) => {
     }
 });
 
-apiRouter.post('/repositories', createProjectLimiter, async (req, res) => {
+apiRouter.post('/repositories', isAuthenticated, createProjectLimiter, async (req, res) => {
     const { name, template, config } = req.body;
 
     if (!name) {
@@ -178,6 +204,7 @@ apiRouter.post('/repositories', createProjectLimiter, async (req, res) => {
     const templatePath = path.join(templatesDir, sanitizedTemplate);
 
     try {
+        const octokit = new Octokit({ auth: req.session.accessToken });
         const { data: repo } = await octokit.repos.createForAuthenticatedUser({
             name: sanitizedName,
             private: true,
@@ -243,6 +270,50 @@ apiRouter.post('/repositories', createProjectLimiter, async (req, res) => {
         res.status(500).json({ error: 'Failed to create repository' });
     }
 });
+
+apiRouter.get('/auth/github', (req, res) => {
+    const authorizationUri = oauth2.authorizeURL({
+        redirect_uri: process.env.GITHUB_CALLBACK_URL,
+        scope: 'repo',
+    });
+    res.redirect(authorizationUri);
+});
+
+apiRouter.get('/auth/github/callback', async (req, res) => {
+    const { code } = req.query;
+    const options = {
+        code,
+    };
+
+    try {
+        const result = await oauth2.getToken(options);
+        req.session.accessToken = result.token.access_token;
+        res.redirect('/');
+    } catch (error) {
+        console.error('Access Token Error', error.message);
+        res.status(500).json('Authentication failed');
+    }
+});
+
+apiRouter.get('/auth/status', (req, res) => {
+    if (req.session.accessToken) {
+        res.json({ loggedIn: true });
+    } else {
+        res.json({ loggedIn: false });
+    }
+});
+
+apiRouter.post('/auth/logout', (req, res) => {
+    req.session.destroy();
+    res.json({ message: 'Logged out successfully' });
+});
+
+if (process.env.NODE_ENV === 'test') {
+    apiRouter.get('/auth/test-login', (req, res) => {
+        req.session.accessToken = 'test-token';
+        res.status(200).send('OK');
+    });
+}
 
 
 app.use('/api', apiRouter);

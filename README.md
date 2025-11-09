@@ -14,7 +14,7 @@ The Rainar platform itself is defined by a set of Kubernetes manifests located i
 
 The Rainar platform is composed of the following services:
 
-*   **`project-service`**: A backend service responsible for providing project templates as downloadable zip archives.
+*   **`project-service`**: A backend service responsible for providing project templates as downloadable zip archives and creating GitHub repositories.
 *   **`dashboard`**: A Next.js frontend application that provides the user interface for the Rainar platform.
 
 ### Networking
@@ -37,11 +37,29 @@ To run the Rainar platform for development, you will need to have the following 
 *   [Skaffold](https://skaffold.dev/docs/install/)
 *   A local Kubernetes cluster, such as [Minikube](https://minikube.sigs.k8s.io/docs/start/) or [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/)
 *   An Ingress controller, such as the [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/deploy/).
-*   A GitHub Personal Access Token with the `repo` scope, stored in the `GITHUB_TOKEN` environment variable.
+
+### GitHub OAuth App Setup
+
+To enable GitHub integration, you will need to create a new GitHub OAuth App.
+
+1.  Go to **Settings** > **Developer settings** > **OAuth Apps** on GitHub.
+2.  Click **New OAuth App**.
+3.  Fill in the application details:
+    *   **Application name**: Rainar Dev
+    *   **Homepage URL**: `http://localhost:3000`
+    *   **Authorization callback URL**: `http://localhost:8080/api/auth/github/callback`
+4.  Click **Register application**.
+5.  On the next page, generate a new client secret.
+
+You will then need to set the following environment variables:
+
+*   `GITHUB_CLIENT_ID`: The "Client ID" of your OAuth App.
+*   `GITHUB_CLIENT_SECRET`: The client secret you just generated.
+*   `GITHUB_CALLBACK_URL`: The authorization callback URL you set above.
 
 ### Running the Platform
 
-Once you have the required tools installed, you can spin up the entire Rainar platform with a single command:
+Once you have the required tools installed and the environment variables set, you can spin up the entire Rainar platform with a single command:
 
 ```bash
 skaffold dev
