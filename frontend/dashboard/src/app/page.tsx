@@ -13,6 +13,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectName, setProjectName] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [creationStatus, setCreationStatus] = useState<{ [key: string]: { message: string; isError: boolean } | null }>({});
 
@@ -52,7 +53,13 @@ export default function Home() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: projectName, template: templateId }),
+        body: JSON.stringify({
+          name: projectName,
+          template: templateId,
+          config: {
+            projectDescription,
+          },
+        }),
       });
 
       if (!res.ok) {
@@ -76,6 +83,7 @@ export default function Home() {
     } finally {
       setIsCreating(false);
       setProjectName('');
+      setProjectDescription('');
     }
   };
 
@@ -95,14 +103,23 @@ export default function Home() {
               <div key={template.id} className="rounded-lg border border-gray-300 bg-gray-100 p-4">
                 <h3 className="text-lg font-semibold">{template.name}</h3>
                 <p className="mt-2 text-gray-600">{template.description}</p>
-                <div className="mt-4 flex items-center space-x-4">
-                  <input
-                    type="text"
-                    placeholder="Project Name"
-                    value={projectName}
-                    onChange={(e) => setProjectName(e.target.value)}
-                    className="flex-grow rounded-md border border-gray-300 p-2"
-                  />
+                <div className="mt-4 flex flex-col space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <input
+                      type="text"
+                      placeholder="Project Name"
+                      value={projectName}
+                      onChange={(e) => setProjectName(e.target.value)}
+                      className="flex-grow rounded-md border border-gray-300 p-2"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Project Description"
+                      value={projectDescription}
+                      onChange={(e) => setProjectDescription(e.target.value)}
+                      className="flex-grow rounded-md border border-gray-300 p-2"
+                    />
+                  </div>
                   <button
                     onClick={() => handleCreateProject(template.id)}
                     disabled={isCreating}

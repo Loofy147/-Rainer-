@@ -3,6 +3,8 @@ const fs = require('fs').promises;
 const path = require('path');
 const rateLimit = require('express-rate-limit');
 const archiver = require('archiver');
+const handlebars = require('handlebars');
+const { Octokit } = require('@octokit/rest');
 
 const app = express();
 const port = 8080;
@@ -12,6 +14,10 @@ app.use(express.json());
 const apiRouter = express.Router();
 
 const templatesDir = path.join(__dirname, '../../../templates');
+
+const octokit = new Octokit({
+    auth: process.env.GITHUB_TOKEN,
+});
 
 // Rate limiter for project creation
 const createProjectLimiter = rateLimit({
@@ -59,63 +65,185 @@ apiRouter.get('/templates', async (req, res) => {
 });
 
 apiRouter.post('/projects', createProjectLimiter, async (req, res) => {
-  const { name, template } = req.body;
+    const { name, template, config } = req.body;
 
-  if (!name) {
-    return res.status(400).json({ error: 'Project name is required' });
-  }
-  if (!template) {
-    return res.status(400).json({ error: 'Template is required' });
-  }
+    if (!name) {
+        return res.status(400).json({ error: 'Project name is required' });
+    }
+    if (!template) {
+        return res.status(400).json({ error: 'Template is required' });
+    }
 
-  const templates = await getTemplates();
-  const selectedTemplate = templates.find(t => t.id === template);
+    const templates = await getTemplates();
+    const selectedTemplate = templates.find(t => t.id === template);
 
-  if (!selectedTemplate) {
-    return res.status(400).json({ error: 'Invalid template specified' });
-  }
+    if (!selectedTemplate) {
+        return res.status(400).json({ error: 'Invalid template specified' });
+    }
 
-  // Sanitize project name
-  const sanitizedName = path.basename(name);
-  if (sanitizedName !== name) {
-      return res.status(400).json({ error: 'Invalid project name. Path traversal characters are not allowed.' });
-  }
+    // Sanitize project name
+    const sanitizedName = path.basename(name);
+    if (sanitizedName !== name) {
+        return res.status(400).json({ error: 'Invalid project name. Path traversal characters are not allowed.' });
+    }
 
-  // Sanitize template id to prevent path traversal
-  const sanitizedTemplate = path.basename(template);
-  if (sanitizedTemplate !== template) {
-      return res.status(400).json({ error: 'Invalid template name. Path traversal characters are not allowed.' });
-  }
+    // Sanitize template id to prevent path traversal
+    const sanitizedTemplate = path.basename(template);
+    if (sanitizedTemplate !== template) {
+        return res.status(400).json({ error: 'Invalid template name. Path traversal characters are not allowed.' });
+    }
 
-  const templatePath = path.join(templatesDir, sanitizedTemplate);
-
-  try {
-    const archive = archiver('zip', {
-      zlib: { level: 9 } // Sets the compression level.
-    });
-
-    archive.on('warning', function(err) {
-      if (err.code === 'ENOENT') {
-        console.warn(err);
-      } else {
-        throw err;
-      }
-    });
-
-    archive.on('error', function(err) {
-      throw err;
-    });
+    const templatePath = path.join(templatesDir, sanitizedTemplate);
 
     res.attachment(`${sanitizedName}.zip`);
-    archive.pipe(res);
-    archive.directory(templatePath, false);
-    await archive.finalize();
 
-  } catch (error) {
-    console.error(`Failed to create project '${name}':`, error);
-    res.status(500).json({ error: 'Failed to create project' });
-  }
+    const archive = archiver('zip', {
+        zlib: { level: 9 } // Sets the compression level.
+    });
+
+    archive.on('warning', (err) => {
+        if (err.code !== 'ENOENT') {
+            console.error('Archive warning:', err);
+        }
+    });
+
+    archive.on('error', (err) => {
+        console.error('Archive error:', err);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to create archive' });
+        }
+        res.end();
+    });
+
+    archive.pipe(res);
+
+    try {
+        const processDirectory = async (directory, archivePath) => {
+            const entries = await fs.readdir(directory, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(directory, entry.name);
+                const newArchivePath = path.join(archivePath, entry.name);
+                if (entry.isDirectory()) {
+                    await processDirectory(fullPath, newArchivePath);
+                } else {
+                    const data = await fs.readFile(fullPath, 'utf8');
+                    const template = handlebars.compile(data);
+                    const result = template({ projectName: name, ...config });
+                    archive.append(result, { name: newArchivePath });
+                }
+            }
+        };
+
+        await processDirectory(templatePath, '');
+
+        await archive.finalize();
+
+    } catch (error) {
+        console.error(`Failed to create project '${name}':`, error);
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to create project' });
+        }
+    }
 });
+
+apiRouter.post('/repositories', createProjectLimiter, async (req, res) => {
+    const { name, template, config } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ error: 'Project name is required' });
+    }
+    if (!template) {
+        return res.status(400).json({ error: 'Template is required' });
+    }
+
+    const templates = await getTemplates();
+    const selectedTemplate = templates.find(t => t.id === template);
+
+    if (!selectedTemplate) {
+        return res.status(400).json({ error: 'Invalid template specified' });
+    }
+
+    // Sanitize project name
+    const sanitizedName = path.basename(name);
+    if (sanitizedName !== name) {
+        return res.status(400).json({ error: 'Invalid project name. Path traversal characters are not allowed.' });
+    }
+
+    // Sanitize template id to prevent path traversal
+    const sanitizedTemplate = path.basename(template);
+    if (sanitizedTemplate !== template) {
+        return res.status(400).json({ error: 'Invalid template name. Path traversal characters are not allowed.' });
+    }
+
+    const templatePath = path.join(templatesDir, sanitizedTemplate);
+
+    try {
+        const { data: repo } = await octokit.repos.createForAuthenticatedUser({
+            name: sanitizedName,
+            private: true,
+        });
+
+        const files = {};
+        const processDirectory = async (directory, archivePath) => {
+            const entries = await fs.readdir(directory, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(directory, entry.name);
+                const newArchivePath = path.join(archivePath, entry.name);
+                if (entry.isDirectory()) {
+                    await processDirectory(fullPath, newArchivePath);
+                } else {
+                    const data = await fs.readFile(fullPath, 'utf8');
+                    const template = handlebars.compile(data);
+                    const result = template({ projectName: name, ...config });
+                    files[newArchivePath] = result;
+                }
+            }
+        };
+
+        await processDirectory(templatePath, '');
+
+        const owner = repo.owner.login;
+        const commitMessage = 'Initial commit from Rainar';
+        const blobs = await Promise.all(
+            Object.entries(files).map(async ([path, content]) => {
+                const { data: blob } = await octokit.git.createBlob({
+                    owner,
+                    repo: sanitizedName,
+                    content: Buffer.from(content).toString('base64'),
+                    encoding: 'base64',
+                });
+                return { path, sha: blob.sha, mode: '100644', type: 'blob' };
+            })
+        );
+
+        const { data: { sha: newTreeSha } } = await octokit.git.createTree({
+            owner,
+            repo: sanitizedName,
+            tree: blobs,
+        });
+
+        const { data: newCommit } = await octokit.git.createCommit({
+            owner,
+            repo: sanitizedName,
+            message: commitMessage,
+            tree: newTreeSha,
+            parents: [],
+        });
+
+        await octokit.git.updateRef({
+            owner,
+            repo: sanitizedName,
+            ref: `heads/${repo.default_branch}`,
+            sha: newCommit.sha,
+        });
+
+        res.status(201).json({ url: repo.html_url });
+    } catch (error) {
+        console.error(`Failed to create repository '${name}':`, error);
+        res.status(500).json({ error: 'Failed to create repository' });
+    }
+});
+
 
 app.use('/api', apiRouter);
 

@@ -14,9 +14,8 @@ The Rainar platform itself is defined by a set of Kubernetes manifests located i
 
 The Rainar platform is composed of the following services:
 
-*   **`project-service`**: A backend service responsible for creating and managing projects.
+*   **`project-service`**: A backend service responsible for providing project templates as downloadable zip archives.
 *   **`dashboard`**: A Next.js frontend application that provides the user interface for the Rainar platform.
-*   **`postgres`**: A PostgreSQL database for persisting project data.
 
 ### Networking
 
@@ -38,32 +37,11 @@ To run the Rainar platform for development, you will need to have the following 
 *   [Skaffold](https://skaffold.dev/docs/install/)
 *   A local Kubernetes cluster, such as [Minikube](https://minikube.sigs.k8s.io/docs/start/) or [Kind](https://kind.sigs.k8s.io/docs/user/quick-start/)
 *   An Ingress controller, such as the [NGINX Ingress Controller](https://kubernetes.github.io/ingress-nginx/deploy/).
-
-### Manual Secret Creation
-
-Before you can run the platform, you must manually create a Kubernetes secret to hold the PostgreSQL database credentials. Create a file named `postgres-secret.yml` with the following content:
-
-```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  name: postgres-secret
-type: Opaque
-stringData:
-  POSTGRES_DB: rainar
-  POSTGRES_USER: rainar
-  POSTGRES_PASSWORD: <your-secret-password>
-```
-
-Replace `<your-secret-password>` with a strong password of your choice. Then, apply the secret to your cluster:
-
-```bash
-kubectl apply -f postgres-secret.yml
-```
+*   A GitHub Personal Access Token with the `repo` scope, stored in the `GITHUB_TOKEN` environment variable.
 
 ### Running the Platform
 
-Once you have created the secret, you can spin up the entire Rainar platform with a single command:
+Once you have the required tools installed, you can spin up the entire Rainar platform with a single command:
 
 ```bash
 skaffold dev

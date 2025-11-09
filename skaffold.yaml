@@ -18,9 +18,6 @@ build:
       dockerfile: Dockerfile
 manifests:
   rawYaml:
-  - infrastructure/k8s/postgres-pvc.yml
-  - infrastructure/k8s/postgres-statefulset.yml
-  - infrastructure/k8s/postgres-service.yml
   - infrastructure/k8s/deployment.yml
   - infrastructure/k8s/service.yml
   - infrastructure/k8s/hpa.yml

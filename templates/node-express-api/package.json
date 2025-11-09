@@ -1,7 +1,7 @@
 {
-  "name": "node-express-api",
+  "name": "{{projectName}}",
   "version": "1.0.0",
-  "description": "A production-ready Node.js API using the Express framework.",
+  "description": "{{projectDescription}}",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
