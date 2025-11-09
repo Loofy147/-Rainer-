@@ -6,6 +6,8 @@ interface Template {
   id: string;
   name: string;
   description: string;
+  secrets?: { name: string; description: string }[];
+  workflow_id?: string;
 }
 
 export default function Home() {
@@ -15,8 +17,9 @@ export default function Home() {
   const [projectName, setProjectName] = useState('');
   const [projectDescription, setProjectDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
-  const [creationStatus, setCreationStatus] = useState<{ [key: string]: { message: string; isError: boolean, url?: string } | null }>({});
+  const [creationStatus, setCreationStatus] = useState<{ [key: string]: { message: string; isError: boolean, url?: string, owner?: string, repo?: string } | null }>({});
   const [loggedIn, setLoggedIn] = useState(false);
+  const [secrets, setSecrets] = useState<{ [key: string]: string }>({});
 
   useEffect(() => {
     async function fetchAuthStatus() {
@@ -80,7 +83,7 @@ export default function Home() {
       }
 
       const data = await res.json();
-      setCreationStatus({ ...creationStatus, [templateId]: { message: 'Repository created successfully!', isError: false, url: data.url } });
+      setCreationStatus({ ...creationStatus, [templateId]: { message: 'Repository created successfully!', isError: false, url: data.url, owner: data.owner, repo: data.repo } });
     } catch (err) {
       setCreationStatus({ ...creationStatus, [templateId]: { message: err instanceof Error ? err.message : 'An unknown error occurred', isError: true } });
     } finally {
@@ -89,6 +92,74 @@ export default function Home() {
       setProjectDescription('');
     }
   };
+
+  const handleSecretChange = (secretName: string, value: string) => {
+    setSecrets({ ...secrets, [secretName]: value });
+  };
+
+  const handleSecretsSubmit = async (templateId: string, workflowId?: string) => {
+    const status = creationStatus[templateId];
+    if (!status || !status.owner || !status.repo) {
+      return;
+    }
+
+    try {
+      await fetch(`/api/repositories/${status.owner}/${status.repo}/secrets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          secrets: Object.entries(secrets).map(([name, value]) => ({ name, value })),
+        }),
+      });
+      setCreationStatus({ ...creationStatus, [templateId]: { ...status, message: 'Secrets submitted successfully! Triggering CI/CD pipeline...' } });
+
+      if (workflowId) {
+        await fetch(`/api/repositories/${status.owner}/${status.repo}/dispatch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            workflow_id: workflowId,
+          }),
+        });
+        setCreationStatus({ ...creationStatus, [templateId]: { ...status, message: 'CI/CD pipeline triggered successfully! Polling for status...' } });
+
+        const interval = setInterval(async () => {
+          try {
+            const res = await fetch(`/api/repositories/${status.owner}/${status.repo}/workflows/${workflowId}/status`);
+            if (!res.ok) return; // a 404 might happen if the workflow hasn't started yet
+            const data = await res.json();
+
+            setCreationStatus(prev => {
+              const currentStatus = prev[templateId];
+              if (!currentStatus) return prev;
+
+              if (data.status === 'completed') {
+                clearInterval(interval);
+                return {
+                  ...prev,
+                  [templateId]: { ...currentStatus, message: `CI/CD pipeline completed with status: ${data.conclusion}` }
+                };
+              } else {
+                return {
+                  ...prev,
+                  [templateId]: { ...currentStatus, message: `CI/CD pipeline status: ${data.status}` }
+                };
+              }
+            });
+          } catch (e) {
+            // Do nothing, just retry on the next interval
+          }
+        }, 1000);
+      }
+    } catch (err) {
+      setCreationStatus({ ...creationStatus, [templateId]: { ...status, message: 'Failed to submit secrets', isError: true } });
+    }
+  };
+
 
   const handleLogout = async () => {
     await fetch('/api/auth/logout', { method: 'POST' });
@@ -116,6 +187,7 @@ export default function Home() {
                   <div className="flex items-center space-x-4">
                     <input
                       type="text"
+                      name="name"
                       placeholder="Project Name"
                       value={projectName}
                       onChange={(e) => setProjectName(e.target.value)}
@@ -123,43 +195,75 @@ export default function Home() {
                     />
                     <input
                       type="text"
+                      name="description"
                       placeholder="Project Description"
                       value={projectDescription}
                       onChange={(e) => setProjectDescription(e.target.value)}
                       className="flex-grow rounded-md border border-gray-300 p-2"
                     />
+                    <select name="template" className="rounded-md border border-gray-300 p-2">
+                      {templates.map(template => (
+                        <option key={template.id} value={template.id}>{template.name}</option>
+                      ))}
+                    </select>
                   </div>
                   {loggedIn ? (
-                    <button
-                      onClick={() => handleCreateRepository(template.id)}
-                      disabled={isCreating}
-                      className="rounded-md bg-blue-500 px-4 py-2 text-white disabled:bg-gray-400"
-                    >
-                      {isCreating ? 'Creating...' : 'Create GitHub Repository'}
-                    </button>
+                    <form onSubmit={(e) => { e.preventDefault(); handleCreateRepository(template.id); }}>
+                      <button
+                        type="submit"
+                        disabled={isCreating}
+                        className="rounded-md bg-blue-500 px-4 py-2 text-white disabled:bg-gray-400"
+                      >
+                        {isCreating ? 'Creating...' : 'Create Project'}
+                      </button>
+                    </form>
                   ) : (
                     <a
                       href="/api/auth/github"
                       className="rounded-md bg-gray-800 px-4 py-2 text-center text-white"
                     >
-                      Login with GitHub to Create Repository
+                      <button>Login with GitHub</button>
                     </a>
                   )}
                 </div>
                 {creationStatus[template.id] && (
-                  <p className={`mt-2 ${creationStatus[template.id]?.isError ? 'text-red-500' : 'text-green-500'}`}>
-                    {creationStatus[template.id]?.message}
-                    {creationStatus[template.id]?.url && (
-                      <a
-                        href={creationStatus[template.id]?.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="ml-2 text-blue-500 underline"
-                      >
-                        View Repository
-                      </a>
+                  <div className={`mt-2 ${creationStatus[template.id]?.isError ? 'text-red-500' : 'text-green-500'}`}>
+                    <p id="pipeline-status">
+                      {creationStatus[template.id]?.message}
+                      {creationStatus[template.id]?.url && (
+                        <a
+                          href={creationStatus[template.id]?.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="ml-2 text-blue-500 underline"
+                        >
+                          View Repository
+                        </a>
+                      )}
+                    </p>
+                    {creationStatus[template.id]?.url && template.secrets && (
+                      <form id="secrets-form" className="mt-4" onSubmit={(e) => { e.preventDefault(); handleSecretsSubmit(template.id, template.workflow_id); }}>
+                        <h4 className="font-semibold">Repository Secrets</h4>
+                        {template.secrets.map((secret) => (
+                          <div key={secret.name} className="mt-2">
+                            <label className="block text-sm font-medium text-gray-700">{secret.name}</label>
+                            <p className="text-xs text-gray-500">{secret.description}</p>
+                            <input
+                              type="password"
+                              onChange={(e) => handleSecretChange(secret.name, e.target.value)}
+                              className="mt-1 block w-full rounded-md border-gray-300 shadow-sm"
+                            />
+                          </div>
+                        ))}
+                        <button
+                          type="submit"
+                          className="mt-4 rounded-md bg-green-500 px-4 py-2 text-white"
+                        >
+                          Set Secrets & Run Pipeline
+                        </button>
+                      </form>
                     )}
-                  </p>
+                  </div>
                 )}
               </div>
             ))}

@@ -3,10 +3,16 @@ const request = require('supertest');
 const JSZip = require('jszip');
 const sinon = require('sinon');
 const proxyquire = require('proxyquire');
+const sodium = require('libsodium-wrappers');
+
+before(async () => {
+    await sodium.ready;
+});
 
 describe('Project Service API', () => {
     let app;
     let getTemplates;
+    let actions;
 
     beforeEach(async () => {
         const repos = {
@@ -26,7 +32,14 @@ describe('Project Service API', () => {
             updateRef: sinon.stub().resolves({}),
         };
 
-        const octokitStub = sinon.stub().returns({ repos, git });
+        actions = {
+            getRepoPublicKey: sinon.stub().resolves({ data: { key: 'i8b+iYd+1q/N45A+3jw4htQ/iVI+TRzIM0Hi3h9TbiA=', key_id: 'test-key-id' } }),
+            createOrUpdateRepoSecret: sinon.stub().resolves({}),
+            createWorkflowDispatch: sinon.stub().resolves({}),
+            listWorkflowRuns: sinon.stub().resolves({ data: { workflow_runs: [] } }),
+        };
+
+        const octokitStub = sinon.stub().returns({ repos, git, actions });
 
         const mockedApp = proxyquire('../index', {
             '@octokit/rest': {
@@ -141,38 +154,123 @@ describe('Project Service API', () => {
         });
     });
 
-    describe('POST /repositories', () => {
-        const projectName = 'test-repo';
+    describe('Authenticated routes', () => {
+        let agent;
 
-        it('should return 401 if not authenticated', async () => {
-            const res = await request(app)
-                .post('/api/repositories')
-                .send({
-                    name: projectName,
-                    template: 'node-express-api',
-                    config: {
-                        projectDescription: 'A custom description for the test project'
-                    }
-                });
-
-            expect(res.status).to.equal(401);
+        beforeEach((done) => {
+            agent = request.agent(app);
+            agent.get('/api/auth/test-login').end((err, res) => {
+                expect(res.status).to.equal(200);
+                done();
+            });
         });
 
-        it('should create a new repository and return its URL if authenticated', async () => {
-            const agent = request.agent(app);
-            await agent.get('/api/auth/test-login');
-            const res = await agent
-                .post('/api/repositories')
-                .send({
-                    name: projectName,
-                    template: 'node-express-api',
-                    config: {
-                        projectDescription: 'A custom description for the test project'
-                    }
+        describe('POST /repositories', () => {
+            const projectName = 'test-repo';
+
+            it('should return 401 if not authenticated', async () => {
+                const res = await request(app)
+                    .post('/api/repositories')
+                    .send({
+                        name: projectName,
+                        template: 'node-express-api',
+                        config: {
+                            projectDescription: 'A custom description for the test project'
+                        }
+                    });
+
+                expect(res.status).to.equal(401);
+            });
+
+            it('should create a new repository and return its URL if authenticated', async () => {
+                const res = await agent
+                    .post('/api/repositories')
+                    .send({
+                        name: projectName,
+                        template: 'node-express-api',
+                        config: {
+                            projectDescription: 'A custom description for the test project'
+                        }
+                    });
+
+                expect(res.status).to.equal(201);
+                expect(res.body).to.have.property('url', 'https://github.com/test-user/test-repo');
+            });
+        });
+
+        describe('POST /repositories/:owner/:repo/secrets', () => {
+            const owner = 'test-user';
+            const repo = 'test-repo';
+
+            it('should create secrets for the repository', async () => {
+                const res = await agent
+                    .post(`/api/repositories/${owner}/${repo}/secrets`)
+                    .send({
+                        secrets: [
+                            { name: 'DOCKER_USERNAME', value: 'test-user' },
+                            { name: 'DOCKER_PASSWORD', value: 'test-password' },
+                        ],
+                    });
+
+                expect(res.status).to.equal(204);
+                expect(actions.createOrUpdateRepoSecret.callCount).to.equal(2);
+            });
+        });
+
+        describe('POST /repositories/:owner/:repo/dispatch', () => {
+            const owner = 'test-user';
+            const repo = 'test-repo';
+
+            it('should dispatch a workflow for the repository', async () => {
+                const res = await agent
+                    .post(`/api/repositories/${owner}/${repo}/dispatch`)
+                    .send({
+                        workflow_id: 'ci.yml',
+                    });
+
+                expect(res.status).to.equal(204);
+                expect(actions.createWorkflowDispatch.calledOnce).to.be.true;
+            });
+        });
+
+        describe('GET /repositories/:owner/:repo/workflows/:workflow_id/status', () => {
+            const owner = 'test-user';
+            const repo = 'test-repo';
+            const workflow_id = 'ci.yml';
+
+            it('should return 401 if not authenticated', async () => {
+                // Use a new, unauthenticated agent for this test
+                const unauthenticatedAgent = request.agent(app);
+                const res = await unauthenticatedAgent
+                    .get(`/api/repositories/${owner}/${repo}/workflows/${workflow_id}/status`);
+
+                expect(res.status).to.equal(401);
+            });
+
+            it('should return the status of the latest workflow run', async () => {
+                actions.listWorkflowRuns.resolves({
+                    data: {
+                        workflow_runs: [
+                            { status: 'in_progress', conclusion: null, created_at: '2025-01-03T00:00:00Z' },
+                            { status: 'completed', conclusion: 'success', created_at: '2025-01-02T00:00:00Z' },
+                        ],
+                    },
                 });
 
-            expect(res.status).to.equal(201);
-            expect(res.body).to.have.property('url', 'https://github.com/test-user/test-repo');
+                const res = await agent
+                    .get(`/api/repositories/${owner}/${repo}/workflows/${workflow_id}/status`);
+
+                expect(res.status).to.equal(200);
+                expect(res.body).to.deep.equal({ status: 'in_progress', conclusion: null });
+            });
+
+            it('should return a "not_found" status if no workflow runs exist', async () => {
+                const res = await agent
+                    .get(`/api/repositories/${owner}/${repo}/workflows/${workflow_id}/status`);
+
+                expect(res.status).to.equal(200);
+                expect(res.body).to.deep.equal({ status: 'not_found' });
+            });
         });
     });
 });

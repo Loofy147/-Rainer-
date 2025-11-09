@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "mocha"
+    "test": "NODE_ENV=test mocha"
   },
   "keywords": [],
   "author": "",
@@ -19,7 +19,8 @@
     "handlebars": "^4.7.8",
     "mocha": "^11.7.5",
     "simple-oauth2": "latest",
-    "express-rate-limit": "^8.2.1"
+    "express-rate-limit": "^8.2.1",
+    "libsodium-wrappers": "^0.7.13"
   },
   "devDependencies": {
     "chai": "^6.2.0",

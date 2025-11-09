@@ -8,6 +8,7 @@ const { Octokit } = require('@octokit/rest');
 const session = require('express-session');
 const cookieParser = require('cookie-parser');
 const { AuthorizationCode } = require('simple-oauth2');
+const sodium = require('libsodium-wrappers');
 
 const app = express();
 const port = 8080;
@@ -54,6 +55,10 @@ const createProjectLimiter = rateLimit({
 
 // In-memory cache for templates
 let templatesCache = null;
+
+(async () => {
+    await sodium.ready;
+})();
 
 async function getTemplates() {
   if (templatesCache) {
@@ -264,12 +269,92 @@ apiRouter.post('/repositories', isAuthenticated, createProjectLimiter, async (re
             sha: newCommit.sha,
         });
 
-        res.status(201).json({ url: repo.html_url });
+        res.status(201).json({ url: repo.html_url, owner: repo.owner.login, repo: repo.name });
     } catch (error) {
         console.error(`Failed to create repository '${name}':`, error);
         res.status(500).json({ error: 'Failed to create repository' });
     }
 });
+
+apiRouter.post('/repositories/:owner/:repo/secrets', isAuthenticated, async (req, res) => {
+    const { owner, repo } = req.params;
+    const { secrets } = req.body;
+
+    try {
+        const octokit = new Octokit({ auth: req.session.accessToken });
+
+        const { data: { key, key_id } } = await octokit.actions.getRepoPublicKey({
+            owner,
+            repo,
+        });
+
+        const binkey = sodium.from_base64(key, sodium.base64_variants.ORIGINAL);
+
+        for (const secret of secrets) {
+            const binsec = sodium.from_string(secret.value);
+            const encBytes = sodium.crypto_box_seal(binsec, binkey);
+            const encryptedValue = sodium.to_base64(encBytes, sodium.base64_variants.ORIGINAL);
+
+            await octokit.actions.createOrUpdateRepoSecret({
+                owner,
+                repo,
+                secret_name: secret.name,
+                encrypted_value: encryptedValue,
+                key_id,
+            });
+        }
+
+        res.status(204).send();
+    } catch (error) {
+        console.error(`Failed to create secrets for repository '${owner}/${repo}':`, error);
+        res.status(500).json({ error: 'Failed to create secrets' });
+    }
+});
+
+apiRouter.post('/repositories/:owner/:repo/dispatch', isAuthenticated, async (req, res) => {
+    const { owner, repo } = req.params;
+    const { workflow_id } = req.body;
+
+    try {
+        const octokit = new Octokit({ auth: req.session.accessToken });
+        await octokit.actions.createWorkflowDispatch({
+            owner,
+            repo,
+            workflow_id,
+            ref: 'main',
+        });
+        res.status(204).send();
+    } catch (error) {
+        console.error(`Failed to dispatch workflow for repository '${owner}/${repo}':`, error);
+        res.status(500).json({ error: 'Failed to dispatch workflow' });
+    }
+});
+
+apiRouter.get('/repositories/:owner/:repo/workflows/:workflow_id/status', isAuthenticated, async (req, res) => {
+    const { owner, repo, workflow_id } = req.params;
+
+    try {
+        const octokit = new Octokit({ auth: req.session.accessToken });
+        const { data } = await octokit.actions.listWorkflowRuns({
+            owner,
+            repo,
+            workflow_id,
+        });
+
+        if (data.workflow_runs.length === 0) {
+            return res.status(200).json({ status: 'not_found' });
+        }
+
+        // The API returns runs in descending order of creation time.
+        const latestRun = data.workflow_runs[0];
+
+        res.json({ status: latestRun.status, conclusion: latestRun.conclusion });
+    } catch (error) {
+        console.error(`Failed to get workflow status for repository '${owner}/${repo}':`, error);
+        res.status(500).json({ error: 'Failed to get workflow status' });
+    }
+});
+
 
 apiRouter.get('/auth/github', (req, res) => {
     const authorizationUri = oauth2.authorizeURL({
