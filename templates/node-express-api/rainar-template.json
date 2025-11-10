@@ -1,4 +1,15 @@
 {
   "name": "Node.js Express API",
-  "description": "A simple Node.js API using the Express framework."
+  "description": "A simple Node.js API using the Express framework.",
+  "secrets": [
+    {
+      "name": "DOCKER_USERNAME",
+      "description": "Your Docker Hub username."
+    },
+    {
+      "name": "DOCKER_PASSWORD",
+      "description": "Your Docker Hub password or access token."
+    }
+  ],
+  "workflow_id": "ci.yml"
 }
