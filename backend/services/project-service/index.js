@@ -350,7 +350,7 @@ apiRouter.get('/repositories/:owner/:repo/workflows/:workflow_id/status', isAuth
 
         res.json({ status: latestRun.status, conclusion: latestRun.conclusion });
     } catch (error) {
-        console.error(`Failed to get workflow status for repository '${owner}/${repo}':`, error);
+        console.error("Failed to get workflow status for repository '%s/%s':", owner, repo, error);
         res.status(500).json({ error: 'Failed to get workflow status' });
     }
 });
